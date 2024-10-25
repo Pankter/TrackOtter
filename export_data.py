@@ -58,7 +58,6 @@ def get_processes():
     return procs
 
 def get_parent(procs):
-
     parents = {}
 
     pids = procs.keys()
@@ -70,7 +69,6 @@ def get_parent(procs):
     return parents
 
 def get_sensor_information():
-
     sensor_info = {
         'Fan Speed': psutil.sensors_fans(),
         'Battery': psutil.sensors_battery()
@@ -87,7 +85,6 @@ def convert_Bytes_to_MB(bytes):
     return bytes / (1024 * 1024)
 
 def get_memory_info():
-
     memory_info = {
         'Swap': psutil.swap_memory(),
         'Virtual Memory': psutil.virtual_memory()
@@ -95,45 +92,125 @@ def get_memory_info():
 
     return memory_info
 
-def print_system_info(info):
+def get_disk_info():
+    disk_info = {
+        'Mounts': psutil.disk_partitions(),
+        'Disk Usage(/)': psutil.disk_usage('/'),
+        'Disk Usage(/home)': psutil.disk_usage('/home/bob/'),
+        'I/O Counter': psutil.disk_io_counters()
+    }
+
+    return disk_info
+
+def get_network():
+
+    network_info = {
+        'Network I/O Counter': psutil.net_io_counters(pernic=True),
+        'Network Connection': psutil.net_connections(kind='inet')
+    }
+
+    return network_info
+
+def print_system_info(info, information_tag):
     """Prints the gathered system information in a readable format."""
-    print("System Information:")
+    print(information_tag)
     print("===================")
     for key, value in info.items():
         print(f"{key}: {value}")
+    print("===================")
 
 def main():
   print("Starting script...")
   print("Collecting data...\n")
   system_info = get_system_info()
-  print_system_info(system_info)
+  print_system_info(system_info, "System Information:")
   cpu_info = get_cpu_info()
-  print_system_info(cpu_info)
+  print_system_info(cpu_info, "CPU Information:")
 
-  process_list = get_processes()
-  print(process_list)
+  # process_list = get_processes()
+  # print_system_info(process_list, "Processes:")
 
-  get_parent(process_list)
-  parents = get_parent(process_list)
-  print(parents)
+  # get_parent(process_list)
+  # parents = get_parent(process_list)
+  # print_system_info(parents, "Parent Processes:")
 
   # Returns a dictionary with informations about various sensors
   sensors = get_sensor_information()
   battery = sensors['Battery']
   # Prints string formatted the battery status and the time left
   print("charge = %s%%, time left = %s" % (battery.percent, secs2hours(battery.secsleft)))
-  # Print the time and date when the device was booted
+  # Print the time and date when the device was booted, equivalent to uptime
   print(datetime.datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S"))
 
   memory = get_memory_info()
   swap = memory['Swap']
   swap = swap._asdict()
-  swap['total'] = convert_Bytes_to_MB(swap['total'])
-  swap['free'] = convert_Bytes_to_MB(swap['free'])
+  # Better or just take the Bytes?
+  for key in swap.keys():
+    swap[key] = convert_Bytes_to_MB(swap[key])
+  memory['Swap'] = swap
+  
+  virt_mem = memory['Virtual Memory']
+  virt_mem = virt_mem._asdict()
 
-  print(memory['Swap'])
-  print(swap['total'], swap['free'])
-  # print(memory['Virtual Memory'])
+  for key in virt_mem.keys():
+    if key != 'percent':
+        virt_mem[key] = convert_Bytes_to_MB(virt_mem[key])
+
+  memory['Virtual Memory'] = virt_mem
+  print_system_info(memory, "Memory Information:")
+
+  disk_info = get_disk_info()
+  disk_mounts = disk_info['Mounts']
+  # print_system_info(disk_usage, "Disk Information:")
+
+  for k, v in enumerate(disk_mounts):
+    disk_mounts[k] = dict(v._asdict())
+
+  disk_usage = {i: d for i, d in enumerate(disk_mounts, start=1)}
+
+  disk_usage_root = disk_info['Disk Usage(/)']
+  disk_usage_root = disk_usage_root._asdict()
+  for key in disk_usage_root.keys():
+    if key != 'percent':
+        disk_usage_root[key] = convert_Bytes_to_MB(disk_usage_root[key])
+
+  disk_usage_home = disk_info['Disk Usage(/)']
+  disk_usage_home = disk_usage_home._asdict()
+  for key in disk_usage_home.keys():
+    if key != 'percent':
+        disk_usage_home[key] = convert_Bytes_to_MB(disk_usage_home[key])
+
+  disk_usage_io = disk_info['I/O Counter']
+  disk_usage_io = disk_usage_io._asdict()
+  for key in disk_usage_io.keys():
+    if key == 'read_bytes' or key =='write_bytes':
+        disk_usage_io[key] = convert_Bytes_to_MB(disk_usage_io[key])
+
+
+  disk_info['Mounts'] = disk_usage
+  disk_info['Disk Usage(/)'] = disk_usage_root
+  disk_info['Disk Usage(/home)'] = disk_usage_home
+  disk_info['I/O Counter'] = disk_usage_io
+  print_system_info(disk_info, "Disk Information:")
+
+  net_info = get_network()
+
+  net_counter = net_info['Network I/O Counter']
+  net_conn = net_info['Network Connection']
+
+  net_counter = {k: v._asdict() for k, v in net_counter.items()}
+
+  for key, item in net_counter.items():
+    for subkey, value in item.items():
+        if subkey == 'bytes_sent' or subkey =='bytes_recv':
+          net_counter[key][subkey] = convert_Bytes_to_MB(net_counter[key][subkey])
+
+  net_conn = {i: v._asdict() for i, v in enumerate(net_conn, start=1)}
+  net_info['Network I/O Counter'] = net_counter
+  net_info['Network Connection'] = net_conn
+  print_system_info(net_info, "Network Information:")
+
 
 if __name__ == "__main__":
         main()
