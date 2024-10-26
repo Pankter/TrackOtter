@@ -4,6 +4,10 @@ import argparse
 import platform
 import psutil
 import datetime
+import prometheus_client
+import json
+import os
+import sys
 
 parser = argparse.ArgumentParser(
     description="reads in system information and exports them")
@@ -49,9 +53,6 @@ def get_cpu_info():
 
 def get_processes():
     """Get the list of all processes"""
-    # process_list = psutil.process_iter()
-    # process = {}
-
     # Creates a dictonary of the following structure '{pid: {name, username}}'
     procs = {p.pid: p.info for p in psutil.process_iter(['name', 'username', 'open_files'])}
 
@@ -119,24 +120,52 @@ def print_system_info(info, information_tag):
         print(f"{key}: {value}")
     print("===================")
 
+def create_data_directory():
+    dir_path = "data"
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+        os.chmod(dir_path, 0o755)
+        print("created data directory...")
+    except FileExistsError as e:
+        print(e)
+        print("Directory already exists.")
+        print("This directory will be created and all data will be exported to it.")
+        print("Remove the old directory or move it to another place.")
+        print("Exiting program...")
+        sys.exit(1)
+        
+def export_as_json(data):
+    with open('data/data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def populate_dictionary(dictionaries):
+    system_data = {}
+    for d in dictionaries:
+        system_data.update(d)
+
+    return system_data
+
+
 def main():
   print("Starting script...")
   print("Collecting data...\n")
   system_info = get_system_info()
-  print_system_info(system_info, "System Information:")
+  # print_system_info(system_info, "System Information:")
   cpu_info = get_cpu_info()
-  print_system_info(cpu_info, "CPU Information:")
+  # print_system_info(cpu_info, "CPU Information:")
 
-  # process_list = get_processes()
+  process_list = get_processes()
   # print_system_info(process_list, "Processes:")
 
-  # get_parent(process_list)
-  # parents = get_parent(process_list)
-  # print_system_info(parents, "Parent Processes:")
+  get_parent(process_list)
+  # need to convert Process object iterable
+  parents = get_parent(process_list)
+  print_system_info(parents, "Parent Processes:")
 
   # Returns a dictionary with informations about various sensors
   sensors = get_sensor_information()
   battery = sensors['Battery']
+
   # Prints string formatted the battery status and the time left
   print("charge = %s%%, time left = %s" % (battery.percent, secs2hours(battery.secsleft)))
   # Print the time and date when the device was booted, equivalent to uptime
@@ -158,7 +187,7 @@ def main():
         virt_mem[key] = convert_Bytes_to_MB(virt_mem[key])
 
   memory['Virtual Memory'] = virt_mem
-  print_system_info(memory, "Memory Information:")
+  # print_system_info(memory, "Memory Information:")
 
   disk_info = get_disk_info()
   disk_mounts = disk_info['Mounts']
@@ -192,7 +221,7 @@ def main():
   disk_info['Disk Usage(/)'] = disk_usage_root
   disk_info['Disk Usage(/home)'] = disk_usage_home
   disk_info['I/O Counter'] = disk_usage_io
-  print_system_info(disk_info, "Disk Information:")
+  # print_system_info(disk_info, "Disk Information:")
 
   net_info = get_network()
 
@@ -209,7 +238,14 @@ def main():
   net_conn = {i: v._asdict() for i, v in enumerate(net_conn, start=1)}
   net_info['Network I/O Counter'] = net_counter
   net_info['Network Connection'] = net_conn
-  print_system_info(net_info, "Network Information:")
+  # print_system_info(net_info, "Network Information:")
+
+  data_list = [system_info, cpu_info, process_list, parents, memory, disk_info, net_info]
+  system_data = populate_dictionary(data_list)
+
+  print("Exporting data as JSON file...")
+  create_data_directory()
+  export_as_json(system_data)
 
 
 if __name__ == "__main__":
