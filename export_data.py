@@ -4,10 +4,11 @@ import argparse
 import platform
 import psutil
 import datetime
-import prometheus_client
 import json
 import os
 import sys
+# from customProcess import parent_process
+
 
 parser = argparse.ArgumentParser(
     description="reads in system information and exports them")
@@ -54,25 +55,15 @@ def get_cpu_info():
 def get_processes():
     """Get the list of all processes"""
     # Creates a dictonary of the following structure '{pid: {name, username}}'
-    procs = {p.pid: p.info for p in psutil.process_iter(['name', 'username', 'open_files'])}
+    procs = {p.pid: p.info for p in psutil.process_iter(['name', 'username', 'open_files', 'ppid'])}
 
     return procs
-
-def get_parent(procs):
-    parents = {}
-
-    pids = procs.keys()
-    for p in pids:
-        proc = psutil.Process(p)
-        parent_p = proc.parent()
-        parents[p] = parent_p
-
-    return parents
 
 def get_sensor_information():
     sensor_info = {
         'Fan Speed': psutil.sensors_fans(),
-        'Battery': psutil.sensors_battery()
+        'Battery': psutil.sensors_battery(),
+        'Uptime': psutil.boot_time()
     }
 
     return sensor_info
@@ -135,8 +126,10 @@ def create_data_directory():
         sys.exit(1)
         
 def export_as_json(data):
-    with open('data/data.json', 'w', encoding='utf-8') as f:
+    filepath = 'data/data.json'
+    with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        print("Exported data successfully to:", filepath)
 
 def populate_dictionary(dictionaries):
     system_data = {}
@@ -157,19 +150,19 @@ def main():
   process_list = get_processes()
   # print_system_info(process_list, "Processes:")
 
-  get_parent(process_list)
-  # need to convert Process object iterable
-  parents = get_parent(process_list)
-  print_system_info(parents, "Parent Processes:")
-
   # Returns a dictionary with informations about various sensors
   sensors = get_sensor_information()
   battery = sensors['Battery']
+  battery = battery._asdict()
+   # Prints string formatted the battery status and the time left
+  battery['secsleft'] = secs2hours(battery['secsleft'])
+  uptime = sensors['Uptime']
+   # Print the time and date when the device was booted, equivalent to uptime
+  uptime = datetime.datetime.fromtimestamp(uptime).strftime("%Y-%m-%d %H:%M:%S")
+  sensors['Battery'] = battery
+  sensors['Uptime'] = uptime
 
-  # Prints string formatted the battery status and the time left
-  print("charge = %s%%, time left = %s" % (battery.percent, secs2hours(battery.secsleft)))
-  # Print the time and date when the device was booted, equivalent to uptime
-  print(datetime.datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S"))
+  print_system_info(sensors, 'Sensor Information:')
 
   memory = get_memory_info()
   swap = memory['Swap']
@@ -240,7 +233,7 @@ def main():
   net_info['Network Connection'] = net_conn
   # print_system_info(net_info, "Network Information:")
 
-  data_list = [system_info, cpu_info, process_list, parents, memory, disk_info, net_info]
+  data_list = [system_info, cpu_info, process_list, memory, disk_info, net_info]
   system_data = populate_dictionary(data_list)
 
   print("Exporting data as JSON file...")
